@@ -1,0 +1,20 @@
+# Test profile overrides
+# WireMock port is injected dynamically by @AutoConfigureWireMock(port = 0)
+# The base-url is overridden in @TestPropertySource per test class.
+
+resilience4j:
+  retry:
+    instances:
+      aviation-api:
+        max-attempts: 1      # disable retries in tests for speed
+        wait-duration: 10ms
+  circuitbreaker:
+    instances:
+      aviation-api:
+        sliding-window-size: 100
+        minimum-number-of-calls: 100  # effectively disable CB in most tests
+
+logging:
+  level:
+    com.aviation: WARN
+    feign: WARN

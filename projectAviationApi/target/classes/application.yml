@@ -1,0 +1,116 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: airport-service
+  threads:
+    virtual:
+      enabled: true   # Java 21 Virtual Threads (Project Loom)
+
+# ──────────────────────────────────────────
+# Aviation API upstream configuration
+# ──────────────────────────────────────────
+aviation:
+  api:
+    base-url: https://api-v2.aviationapi.com
+    default-airac: 0   # 0 = current cycle
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs        # endpoint JSON da spec
+  swagger-ui:
+    path: /swagger-ui.html    # UI visual
+    operations-sorter: alpha  # ordena endpoints alfabeticamente
+    tags-sorter: alpha
+  show-actuator: false        # não expõe endpoints do Actuator no Swagger
+
+# ──────────────────────────────────────────
+# Feign client
+# ──────────────────────────────────────────
+feign:
+  okhttp:
+    enabled: true
+  client:
+    config:
+      aviation-api-client:
+        connect-timeout: 3000     # ms
+        read-timeout: 5000        # ms
+        logger-level: BASIC       # NONE | BASIC | HEADERS | FULL
+
+# ──────────────────────────────────────────
+# Resilience4j – Circuit Breaker
+# ──────────────────────────────────────────
+resilience4j:
+  circuitbreaker:
+    instances:
+      aviation-api:
+        register-health-indicator: true
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50          # % of failures to OPEN
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+        record-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - feign.FeignException.ServiceUnavailable
+          - feign.FeignException.GatewayTimeout
+          - feign.FeignException.TooManyRequests
+
+  # ──────────────────────────────────────────
+  # Resilience4j – Retry
+  # ──────────────────────────────────────────
+  retry:
+    instances:
+      aviation-api:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2   # 500ms → 1s → 2s
+        retry-exceptions:
+          - java.io.IOException
+          - java.util.concurrent.TimeoutException
+          - feign.FeignException.ServiceUnavailable
+          - feign.FeignException.GatewayTimeout
+        ignore-exceptions:
+          - feign.FeignException.NotFound
+          - feign.FeignException.BadRequest
+          - com.aviation.airport.exception.InvalidIcaoException
+
+  # ──────────────────────────────────────────
+  # Resilience4j – Rate Limiter (self-protection)
+  # ──────────────────────────────────────────
+  ratelimiter:
+    instances:
+      aviation-api:
+        limit-for-period: 20              # max calls per refresh period
+        limit-refresh-period: 1s
+        timeout-duration: 0               # fail fast if limit exceeded
+
+# ──────────────────────────────────────────
+# Actuator / Observability
+# ──────────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,circuitbreakers,retries
+  endpoint:
+    health:
+      show-details: always
+  health:
+    circuitbreakers:
+      enabled: true
+
+# ──────────────────────────────────────────
+# Logging
+# ──────────────────────────────────────────
+logging:
+  level:
+    com.aviation: DEBUG
+    feign: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{icao}] %logger{36} - %msg%n"
